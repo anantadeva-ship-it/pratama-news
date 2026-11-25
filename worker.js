@@ -51,6 +51,46 @@ function containsTerms(text) {
   const tokens = new Set(text.split(/[^\p{L}\p{N}]+/u));
   return word => word.includes(' ') || word.includes('-') ? text.includes(word) : tokens.has(word);
 }
+// Keep aliases specific enough to avoid mistaking ordinary words for tickers.
+const ISSUERS = [
+  ['BBCA', 'Bank Central Asia', ['bbca', 'bank central asia', 'bca']],
+  ['BBRI', 'Bank Rakyat Indonesia', ['bbri', 'bank rakyat indonesia', 'bri']],
+  ['BMRI', 'Bank Mandiri', ['bmri', 'bank mandiri']],
+  ['BBNI', 'Bank Negara Indonesia', ['bbni', 'bank negara indonesia', 'bni']],
+  ['TLKM', 'Telkom Indonesia', ['tlkm', 'telkom indonesia', 'telkom']],
+  ['ASII', 'Astra International', ['asii', 'astra international']],
+  ['GOTO', 'GoTo Gojek Tokopedia', ['goto', 'gojek', 'tokopedia']],
+  ['BREN', 'Barito Renewables Energy', ['bren', 'barito renewables']],
+  ['AMMN', 'Amman Mineral Internasional', ['ammn', 'amman mineral']],
+  ['ANTM', 'Aneka Tambang', ['antm', 'aneka tambang', 'antam']],
+  ['UNVR', 'Unilever Indonesia', ['unvr', 'unilever indonesia']],
+  ['ICBP', 'Indofood CBP', ['icbp', 'indofood cbp']],
+  ['INDF', 'Indofood Sukses Makmur', ['indf', 'indofood sukses makmur']],
+  ['ADRO', 'Alamtri Resources Indonesia (Adaro)', ['adro', 'alamtri resources', 'adaro']],
+  ['PTBA', 'Bukit Asam', ['ptba', 'bukit asam']],
+  ['MEDC', 'Medco Energi', ['medc', 'medco energi']],
+  ['BRPT', 'Barito Pacific', ['brpt', 'barito pacific']],
+  ['CPIN', 'Charoen Pokphand Indonesia', ['cpin', 'charoen pokphand indonesia']],
+  ['MAPI', 'Mitra Adiperkasa', ['mapi', 'mitra adiperkasa']],
+  ['PGAS', 'Perusahaan Gas Negara', ['pgas', 'perusahaan gas negara']],
+  ['AAPL', 'Apple', ['aapl', 'apple']],
+  ['MSFT', 'Microsoft', ['msft', 'microsoft']],
+  ['NVDA', 'NVIDIA', ['nvda', 'nvidia']],
+  ['GOOGL', 'Alphabet / Google', ['googl', 'goog', 'alphabet', 'google']],
+  ['AMZN', 'Amazon', ['amzn', 'amazon']],
+  ['META', 'Meta Platforms', ['meta platforms', 'facebook']],
+  ['TSLA', 'Tesla', ['tsla', 'tesla']],
+  ['JPM', 'JPMorgan Chase', ['jpm', 'jpmorgan', 'jp morgan']],
+  ['COIN', 'Coinbase', ['coinbase', 'coin']],
+  ['MSTR', 'Strategy (MicroStrategy)', ['mstr', 'microstrategy', 'strategy inc']],
+];
+function identifyIssuers(article) {
+  const text = `${article.title} ${article.description}`.toLowerCase();
+  return ISSUERS.filter(([, , aliases]) => aliases.some(alias => {
+    if (alias.includes(' ')) return text.includes(alias);
+    return new RegExp(`(^|[^\\p{L}\\p{N}])\\$?${alias}([^\\p{L}\\p{N}]|$)`, 'u').test(text);
+  })).map(([ticker, name]) => ({ ticker, name }));
+}
 function analyze(article) {
   const title = article.title.toLowerCase();
   const description = article.description.toLowerCase();
@@ -63,6 +103,8 @@ function analyze(article) {
   const positiveScore = positiveTitle.length * 2 + positiveDescription.length;
   const negativeScore = negativeTitle.length * 2 + negativeDescription.length;
   const mood = positiveScore && negativeScore && Math.abs(positiveScore - negativeScore) <= 1 ? 'mixed' : positiveScore > negativeScore ? 'positive' : negativeScore > positiveScore ? 'negative' : 'neutral';
+  const stance = mood === 'positive' ? 'bullish' : mood === 'negative' ? 'bearish' : mood;
+  const issuers = identifyIssuers(article);
   const marketName = {
     'Saham AS': 'pasar Amerika Serikat',
     'Saham Indonesia': 'pasar Indonesia',
@@ -70,11 +112,12 @@ function analyze(article) {
     Emas: 'pasar emas global dan negara produsen atau pengguna emas',
     USD: 'pasar valas pada negara dan mata uang yang disebut dalam berita',
   }[article.category] || 'pasar negara terkait';
+  const issuerLabel = issuers.length ? issuers.map(item => `${item.name} (${item.ticker})`).join(', ') : 'Emiten belum teridentifikasi dari judul/ringkasan';
   const companyImpact = {
-    positive: 'Nada positif dapat mendukung sentimen investor terhadap perusahaan yang diberitakan. Dampak pada laba atau valuasi bergantung pada apakah berita ini menyangkut kinerja, kontrak, atau hanya pergerakan harga.',
-    negative: 'Nada negatif dapat menekan sentimen investor terhadap perusahaan yang diberitakan. Dampak operasional dan keuangan perlu dilihat dari isi lengkap berita serta laporan perusahaan.',
-    mixed: 'Berita memuat sinyal yang beragam; dampak pada perusahaan bergantung pada faktor mana yang lebih kuat dan berapa lama pengaruhnya.',
-    neutral: 'Judul dan ringkasan belum menunjukkan arah yang jelas untuk perusahaan. Baca isi lengkap untuk mengetahui dampak spesifiknya.',
+    positive: `Bullish untuk ${issuerLabel}: kabar bernada positif berpotensi mendukung sentimen dan minat investor. Dampak ke harga atau kinerja emiten belum dapat dipastikan tanpa memeriksa isi berita dan laporan perusahaan.`,
+    negative: `Bearish untuk ${issuerLabel}: kabar bernada negatif berpotensi menekan sentimen investor. Besar dampak pada harga, operasi, atau keuangan perlu dikonfirmasi dari isi berita dan laporan perusahaan.`,
+    mixed: `Campuran untuk ${issuerLabel}: terdapat sinyal positif dan negatif, sehingga arah dampaknya belum jelas dan volatilitas dapat meningkat.`,
+    neutral: `Netral / belum terkonfirmasi untuk ${issuerLabel}: judul dan ringkasan belum memberi sinyal arah yang kuat.`,
   }[mood];
   const marketImpact = {
     positive: `Jika kabar ini mencerminkan perbaikan fundamental, sentimen dapat mendukung ${marketName}; pengaruh luasnya bergantung pada skala dan banyaknya aset yang terdampak.`,
@@ -82,7 +125,7 @@ function analyze(article) {
     mixed: `Sinyal yang beragam dapat menambah volatilitas di ${marketName}; arah pasar belum dapat disimpulkan dari ringkasan saja.`,
     neutral: `Belum terlihat arah dampak yang jelas pada ${marketName} dari judul dan ringkasan yang tersedia.`,
   }[mood];
-  return { mood, evidence: [...positive, ...negative].slice(0, 6), companyImpact, marketImpact };
+  return { mood, stance, issuers, issuerLabel, evidence: [...positive, ...negative].slice(0, 6), companyImpact, marketImpact };
 }
 async function readFeed(search) {
   const url = new URL('https://www.bing.com/news/search');
