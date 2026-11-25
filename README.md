@@ -1,6 +1,6 @@
 # PRATAMA NEWS
 
-Responsive market-news site for US stocks, Indonesian stocks, crypto, gold, and USD/forex. It includes a one-click dark-theme control, live Bing News RSS results, thumbnails when the feed provides them, and keyword-based sentiment/impact notes.
+Responsive market-news site for US stocks, Indonesian stocks, crypto, gold, and USD/forex. It includes a one-click dark-theme control, live Bing News RSS results, thumbnails when the feed provides them, issuer-aware sentiment notes, and a USD economic calendar for CPI, NFP, and FOMC.
 
 ## Run locally
 
@@ -14,7 +14,7 @@ GitHub Pages publishes the static page, while the live news API needs a separate
 
 1. Create a GitHub repository named `pratama-news` and add the contents of this folder to its `main` branch. Keep the `.github/workflows/pages.yml` path intact.
 2. In the repository, open **Settings → Pages** and choose **GitHub Actions** as the publishing source. The included workflow deploys the site after a push to `main`.
-3. In Cloudflare, create and deploy a Worker using `worker.js`. It serves the `/api/news` endpoint and reads Bing News RSS.
+3. In Cloudflare, create and deploy a Worker using `worker.js`. It serves `/api/news` for articles and `/api/calendar` for scheduled US macro releases and prior readings.
 4. Copy the Worker origin, such as `https://pratama-news-api.example.workers.dev`, into `config.js`:
 
    ```js
@@ -29,4 +29,5 @@ GitHub Pages serves static files, so the site does not have a public URL until i
 
 - The dark/light choice is saved in the browser on each device.
 - News coverage depends on the Bing News index; it is not an exhaustive feed of every company release.
-- Sentiment and market impacts are keyword-based estimates, not verified conclusions or investment recommendations.
+- Bullish/bearish labels are keyword-based estimates, not verified conclusions or investment recommendations.
+- The USD calendar is refreshed every five minutes and shows official release schedules and previous readings. The upstream calendar does not provide market consensus forecasts, so the page explains conditional scenarios instead of inventing pre-release probabilities.

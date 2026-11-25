@@ -34,6 +34,35 @@ const WORDS = {
 };
 const jsonHeaders = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'public, max-age=60', 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' };
 
+async function economicCalendar() {
+  const today = new Date();
+  const from = new Date(today.getTime() - 7 * 86400000).toISOString().slice(0, 10);
+  const end = new Date(today.getTime() + 180 * 86400000).toISOString().slice(0, 10);
+  const endpoint = new URL('https://xoomar.com/api/markets/calendar');
+  endpoint.searchParams.set('from', from);
+  endpoint.searchParams.set('to', end);
+  endpoint.searchParams.set('importance', 'high');
+  const response = await fetch(endpoint, { headers: { 'Accept': 'application/json' } });
+  if (!response.ok) throw new Error(`Kalender ekonomi merespons HTTP ${response.status}`);
+  const payload = await response.json();
+  const events = (payload.data || []).filter(event => /cpi|nonfarm payroll|employment situation|fomc rate decision/i.test(event.eventName || ''));
+  return {
+    updatedAt: payload.updatedAt || Date.now(),
+    source: 'XOOMAR · jadwal BLS dan Federal Reserve',
+    sourceUrl: 'https://xoomar.com/markets/api/calendar',
+    events: events.map(event => ({
+      name: event.eventName,
+      scheduledAt: event.scheduledAt,
+      period: event.periodLabel,
+      previous: event.previous,
+      actual: event.actual,
+      unit: event.unit,
+      source: event.source,
+      sourceUrl: event.canonicalUrl || (event.source === 'fed' ? 'https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm' : 'https://www.bls.gov/schedule/news_release/'),
+    })),
+  };
+}
+
 function decodeXml(value = '') {
   return value.replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
     .replace(/&#x([\da-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
@@ -176,7 +205,22 @@ export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: jsonHeaders });
-    if (request.method !== 'GET' || url.pathname !== '/api/news') return new Response('Not found', { status: 404, headers: jsonHeaders });
+    if (request.method !== 'GET') return new Response('Method not allowed', { status: 405, headers: jsonHeaders });
+    if (url.pathname === '/api/calendar') {
+      const cacheKey = new Request('https://pratama-news-cache.invalid/api/calendar');
+      const cached = await caches.default.match(cacheKey);
+      if (cached) return cached;
+      try {
+        const data = await economicCalendar();
+        const headers = { ...jsonHeaders, 'Cache-Control': 'public, max-age=300' };
+        const response = new Response(JSON.stringify(data), { headers });
+        ctx.waitUntil(caches.default.put(cacheKey, response.clone()));
+        return response;
+      } catch (error) {
+        return new Response(JSON.stringify({ error: `Tidak dapat mengambil kalender USD. ${error.message}` }), { status: 502, headers: jsonHeaders });
+      }
+    }
+    if (url.pathname !== '/api/news') return new Response('Not found', { status: 404, headers: jsonHeaders });
     const q = (url.searchParams.get('q') || '').trim().slice(0, 120);
     const categoryName = CATEGORIES[url.searchParams.get('category')] !== undefined ? url.searchParams.get('category') : 'Semua';
     const cacheUrl = new URL(`https://pratama-news-cache.invalid/api/news?category=${encodeURIComponent(categoryName)}&q=${encodeURIComponent(q.toLowerCase())}`);
